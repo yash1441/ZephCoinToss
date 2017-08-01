@@ -77,7 +77,7 @@ public Action Cmd_Toss(int client, int args)
 		return Plugin_Handled;
 	}
 	
-	char Target[64], String:cHP[32], target_final;
+	char Target[64], char cHP[32], int target_final;
 	GetCmdArg(1, cHP, sizeof(cHP));
 	GetCmdArg(2, Target, sizeof(Target));
 	
