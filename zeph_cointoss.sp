@@ -3,7 +3,7 @@
 #define DEBUG
 
 #define PLUGIN_AUTHOR "Simon"
-#define PLUGIN_VERSION "Private4"
+#define PLUGIN_VERSION "1.4"
 
 #include <sourcemod>
 #include <sdktools>
@@ -20,14 +20,14 @@
 
 EngineVersion g_Game;
 
-new PleaseDo = true;
-new bool:g_Wait = false;
-new bool:g_bUsed[MAXPLAYERS + 1] = {false, ...};
-new bool:g_Doit[MAXPLAYERS + 1] = {false, ...};
-new g_Creds[MAXPLAYERS + 1] = {0, ...};
-new g_Enemy[MAXPLAYERS + 1] = {0, ...};
+bool PleaseDo = true;
+bool g_Wait = false;
+bool g_bUsed[MAXPLAYERS + 1] = {false, ...};
+bool g_Doit[MAXPLAYERS + 1] = {false, ...};
+int g_Creds[MAXPLAYERS + 1] = {0, ...};
+int g_Enemy[MAXPLAYERS + 1] = {0, ...};
 
-public Plugin:myinfo = 
+public Plugin myinfo = 
 {
 	name = "Zephyrus-Store: Coin-Toss",
 	author = PLUGIN_AUTHOR,
@@ -36,7 +36,7 @@ public Plugin:myinfo =
 	url = "yash1441@yahoo.com"
 };
 
-public OnPluginStart()
+public void OnPluginStart()
 {
 	LoadTranslations("common.phrases");
 	g_Game = GetEngineVersion();
@@ -51,7 +51,7 @@ public OnPluginStart()
 	HookEvent("round_end", Event_OnRoundEnd);
 }
 
-public Action:Cmd_Toss(client, args)
+public Action Cmd_Toss(int client, int args)
 {
 	if(client == 0)
 	{
@@ -77,13 +77,13 @@ public Action:Cmd_Toss(client, args)
 		return Plugin_Handled;
 	}
 	
-	new String:Target[64], String:cHP[32], target_final;
+	char Target[64], String:cHP[32], target_final;
 	GetCmdArg(1, cHP, sizeof(cHP));
 	GetCmdArg(2, Target, sizeof(Target));
 	
 	
 	
-	new creds;
+	int creds;
 	creds = StringToInt(cHP);
 
 	target_final = FindTarget(client, Target, true, false);
@@ -104,8 +104,8 @@ public Action:Cmd_Toss(client, args)
 		return Plugin_Handled;
 	}
 	
-	new creds1 = Store_GetClientCredits(client);
-	new creds2 = Store_GetClientCredits(target_final);
+	int creds1 = Store_GetClientCredits(client);
+	int creds2 = Store_GetClientCredits(target_final);
 	if(creds > creds1)
 	{
 		PrintToChat(client, "%s You don't have enough credits.", CHAT_PREFIX);
@@ -129,12 +129,12 @@ public Action:Cmd_Toss(client, args)
 	return Plugin_Handled;
 }
 
-public AcceptReject(client, other)
+public void AcceptReject(int client, int other)
 {
-	new Handle:menu = CreateMenu(MyMenuHandler);
+	Handle menu = CreateMenu(MyMenuHandler);
 	
 	// FormatEx Here
-	new String:s_version[30];
+	char s_version[30];
 	FormatEx(s_version, sizeof(s_version), "Coin-Toss: (%N) [%i Credits]", client, g_Creds[client]);
 	SetMenuTitle(menu, s_version);
 	AddMenuItem(menu, "accept", "Accept");
@@ -145,7 +145,7 @@ public AcceptReject(client, other)
 	DisplayMenu(menu, other, MENU_TIME_FOREVER);
 }
 
-public Action:RejectIt(Handle:timer, other)
+public Action RejectIt(Handle timer, int other)
 {
 	if (PleaseDo)
 	{
@@ -157,7 +157,7 @@ public Action:RejectIt(Handle:timer, other)
 	
 }
 
-public MyMenuHandler(Handle:menu, MenuAction:action, client, itemNum)
+public void MyMenuHandler(Handle menu, MenuAction action, int client, int itemNum)
 {
 	if (action == MenuAction_Select)
 	{
@@ -180,7 +180,7 @@ public MyMenuHandler(Handle:menu, MenuAction:action, client, itemNum)
 	checkreject(client);
 }
 
-public checkreject(client)
+public void checkreject(client)
 {
 	if(g_Doit[client])
 		StartCoinToss(client, g_Enemy[client], g_Creds[client]);
@@ -193,7 +193,7 @@ public checkreject(client)
 	g_Enemy[client] = 0;
 }
 
-public StartCoinToss(you, enemy, prize)
+public void StartCoinToss(int you, int enemy, int prize)
 {
 	g_bUsed[you] = true;
 	g_bUsed[enemy] = true;
@@ -202,9 +202,9 @@ public StartCoinToss(you, enemy, prize)
 	Store_SetClientCredits(you, Store_GetClientCredits(you) - prize);
 	Store_SetClientCredits(enemy, Store_GetClientCredits(enemy) - prize);
 	
-	new Total = (prize * 2);
+	int Total = (prize * 2);
 	
-	new random_number = GetRandomInt(1, 2);
+	int random_number = GetRandomInt(1, 2);
 	
 	if(random_number == 1)
 	{
@@ -220,7 +220,7 @@ public StartCoinToss(you, enemy, prize)
 	g_Wait = false;
 }
 
-public Action:Event_OnRoundEnd(Handle event, const char[] name, bool dontBroadcast)
+public Action Event_OnRoundEnd(Handle event, const char[] name, bool dontBroadcast)
 {
 	LoopClients(i)
 	{
@@ -229,14 +229,14 @@ public Action:Event_OnRoundEnd(Handle event, const char[] name, bool dontBroadca
 	return Plugin_Continue;
 }
 
-stock CloseClientMenu(client)
+public void CloseClientMenu(client)
 {
-	new Handle:m_hMenu = CreateMenu(MenuHandler_CloseClientMenu);
+	Handle m_hMenu = CreateMenu(MenuHandler_CloseClientMenu);
 	SetMenuTitle(m_hMenu, "Empty menu");
 	DisplayMenu(m_hMenu, client, 1);
 }
 
-public MenuHandler_CloseClientMenu(Handle:menu, MenuAction:action, client, param2)
+public void MenuHandler_CloseClientMenu(Handle menu, MenuAction action, int client, int param2)
 {
 	if (action == MenuAction_End)
 		CloseHandle(menu);
