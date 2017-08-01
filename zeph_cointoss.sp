@@ -239,7 +239,7 @@ public void CloseClientMenu(client)
 	DisplayMenu(m_hMenu, client, 1);
 }
 
-public void MenuHandler_CloseClientMenu(Handle menu, MenuAction action, int client, int param2)
+public int MenuHandler_CloseClientMenu(Handle menu, MenuAction action, int client, int param2)
 {
 	if (action == MenuAction_End)
 		CloseHandle(menu);
