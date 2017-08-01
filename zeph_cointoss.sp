@@ -159,7 +159,7 @@ public Action RejectIt(Handle timer, int other)
 	
 }
 
-public void MyMenuHandler(Handle menu, MenuAction action, int client, int itemNum)
+public int MyMenuHandler(Handle menu, MenuAction action, int client, int itemNum)
 {
 	if (action == MenuAction_Select)
 	{
@@ -180,6 +180,7 @@ public void MyMenuHandler(Handle menu, MenuAction action, int client, int itemNu
 		}
 	}
 	checkreject(client);
+	return 0;
 }
 
 public void checkreject(client)
