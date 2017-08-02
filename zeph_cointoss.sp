@@ -3,7 +3,7 @@
 #define DEBUG
 
 #define PLUGIN_AUTHOR "Simon"
-#define PLUGIN_VERSION "1.4"
+#define PLUGIN_VERSION "1.5"
 
 #include <sourcemod>
 #include <sdktools>
@@ -119,6 +119,9 @@ public Action Cmd_Toss(int client, int args)
 		PrintToChat(client, "%s Opponent doesn't have enough credits.", CHAT_PREFIX);
 		return Plugin_Handled;
 	}
+	
+	Store_SetClientCredits(client, Store_GetClientCredits(client) - creds);
+	Store_SetClientCredits(target_final, Store_GetClientCredits(target_final) - creds);
 	g_Creds[target_final] = creds;
 	g_Creds[client] = creds;
 	g_Enemy[client] = target_final;
@@ -188,7 +191,11 @@ public void checkreject(client)
 	if(g_Doit[client])
 		StartCoinToss(client, g_Enemy[client], g_Creds[client]);
 	else
+	{
 		PrintToChat(client, "%s %N rejected your challenge.", CHAT_PREFIX, client);
+		Store_SetClientCredits(client, Store_GetClientCredits(client) + g_Creds[client]);
+		Store_SetClientCredits(g_Enemy[client], Store_GetClientCredits(g_Enemy[client]) + g_Creds[g_Enemy[client]]);
+	}
 		
 	g_Creds[client] = 0;
 	g_Creds[g_Enemy[client]] = 0;
@@ -202,8 +209,8 @@ public void StartCoinToss(int you, int enemy, int prize)
 	g_bUsed[enemy] = true;
 	g_Doit[enemy] = false;
 	PrintToChatAll("%s %N vs %N for %i credits.", CHAT_PREFIX, you, enemy, prize);
-	Store_SetClientCredits(you, Store_GetClientCredits(you) - prize);
-	Store_SetClientCredits(enemy, Store_GetClientCredits(enemy) - prize);
+	//Store_SetClientCredits(you, Store_GetClientCredits(you) - prize);
+	//Store_SetClientCredits(enemy, Store_GetClientCredits(enemy) - prize);
 	
 	int Total = (prize * 2);
 	
