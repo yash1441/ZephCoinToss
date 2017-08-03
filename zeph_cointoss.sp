@@ -3,29 +3,29 @@
 #define DEBUG
 
 #define PLUGIN_AUTHOR "Simon"
-#define PLUGIN_VERSION "1.5"
+#define PLUGIN_VERSION "2.1"
+#define ACCEPT "#accept"
+#define REJECT "#reject"
 
 #include <sourcemod>
-#include <sdktools>
-#include <cstrike>
-#include <sdkhooks>
 #include <store>
+#include <menu-stocks>
+#include <marquee>
 
-#define MIN_CREDITS 10
-#define MAX_CREDITS 5000
+Handle g_hEnable;
+Handle g_hMinCredits;
+Handle g_hMaxCredits;
+
+bool g_bEnable;
+int g_MinCredits;
+int g_MaxCredits;
+
+bool g_bBusy[MAXPLAYERS + 1] =  { false, ... };
 
 #define CHAT_PREFIX "[Coin-Toss]"
 
-#define LoopClients(%1) for(int %1 = 1; %1 <= MaxClients; %1++)
-
 EngineVersion g_Game;
 
-bool PleaseDo = true;
-bool g_Wait = false;
-bool g_bUsed[MAXPLAYERS + 1] = {false, ...};
-bool g_Doit[MAXPLAYERS + 1] = {false, ...};
-int g_Creds[MAXPLAYERS + 1] = {0, ...};
-int g_Enemy[MAXPLAYERS + 1] = {0, ...};
 
 public Plugin myinfo = 
 {
@@ -45,31 +45,46 @@ public void OnPluginStart()
 		SetFailState("This plugin is for CSGO/CSS only.");	
 	}
 	
-	RegConsoleCmd("sm_coin", Cmd_Toss);
-	RegConsoleCmd("sm_cointoss", Cmd_Toss);
+	CreateConVar("store_cointoss_version", PLUGIN_VERSION, "Zephyrus-Store: Coin-Toss Version", FCVAR_SPONLY|FCVAR_REPLICATED|FCVAR_NOTIFY|FCVAR_DONTRECORD);
+	g_hEnable = CreateConVar("cointoss_enable", "1", "Enable / Disable Coin-Toss.", FCVAR_NOTIFY, true, 0.0, true, 1.0);
+	g_hMinCredits = CreateConVar("cointoss_min", "10", "Minimum credits that can be gambled.", FCVAR_NOTIFY, true, 1.0);
+	g_hMaxCredits = CreateConVar("cointoss_max", "5000", "Maximum credits that can be gambled.", FCVAR_NOTIFY);
 	
-	HookEvent("round_end", Event_OnRoundEnd);
+	g_bEnable = GetConVarBool(g_hEnable);
+	g_MinCredits = GetConVarInt(g_hMinCredits);
+	g_MaxCredits = GetConVarInt(g_hMaxCredits);
+	
+	HookConVarChange(g_hEnable, OnConVarChanged);	
+	HookConVarChange(g_hMinCredits, OnConVarChanged);
+	HookConVarChange(g_hMaxCredits, OnConVarChanged);
+	
+	RegConsoleCmd("sm_coin", Cmd_Toss, "Usage: sm_coin <credits> <name or #userid>");
+	RegConsoleCmd("sm_cointoss", Cmd_Toss, "Usage: sm_cointoss <credits> <name or #userid>");
+}
+
+public void OnConVarChanged(Handle convar, const char[] oldValue, const char[] newValue)
+{
+	if(convar == g_hEnable)
+	{
+		g_bEnable = GetConVarBool(g_hEnable);
+	}
+	
+	else if(convar == g_hMinCredits)
+	{
+		g_MinCredits = StringToInt(newValue);
+	}
+	
+	else if(convar == g_hMaxCredits)
+	{
+		g_MaxCredits = StringToInt(newValue);
+	}
 }
 
 public Action Cmd_Toss(int client, int args)
 {
-	if(client == 0)
-	{
-		ReplyToCommand(client, "%s This command is only for players", CHAT_PREFIX);
-		return Plugin_Handled;
-	}
+	if (!g_bEnable) return Plugin_Handled;
 	
-	if(g_bUsed[client])
-	{
-		PrintToChat(client, "%s You are already in an ongoing Coin-Toss.", CHAT_PREFIX);
-		return Plugin_Handled;
-	}
-	
-	if(g_Wait)
-	{
-		PrintToChat(client, "%s There is an ongoing Coin-Toss. Please wait.", CHAT_PREFIX);
-		return Plugin_Handled;
-	}
+	if (client == 0) return Plugin_Handled;
 	
 	if(args != 2)
 	{
@@ -77,177 +92,157 @@ public Action Cmd_Toss(int client, int args)
 		return Plugin_Handled;
 	}
 	
-	char Target[64];
-	char cHP[32];
-	int target_final;
-	GetCmdArg(1, cHP, sizeof(cHP));
-	GetCmdArg(2, Target, sizeof(Target));
+	char sTarget[64];
+	char sCredits[32];
+	GetCmdArg(1, sCredits, sizeof(sCredits));
+	GetCmdArg(2, sTarget, sizeof(sTarget));
 	
+	int Credits = StringToInt(sCredits);
+	int Target = FindTarget(client, sTarget, true, false);
 	
-	
-	int creds;
-	creds = StringToInt(cHP);
-
-	target_final = FindTarget(client, Target, true, false);
-
-
-	if (target_final == -1)
-		return Plugin_Handled;
-
-	if (creds < MIN_CREDITS || creds > MAX_CREDITS)
+	if (Target == -1)
 	{
-		PrintToChat(client, "%s Use a legit value of credits (%i - %i).", CHAT_PREFIX, MIN_CREDITS, MAX_CREDITS);
+		PrintToChat(client, "%s %s was not found.", CHAT_PREFIX, sTarget);
 		return Plugin_Handled;
 	}
 	
-	if(g_bUsed[target_final])
+	if (g_bBusy[client])
 	{
-		PrintToChat(client, "%s Opponent is already in an ongoing Coin-Toss.", CHAT_PREFIX);
+		PrintToChat(client, "%s You are already in an on-going game.", CHAT_PREFIX);
 		return Plugin_Handled;
 	}
 	
-	int creds1 = Store_GetClientCredits(client);
-	int creds2 = Store_GetClientCredits(target_final);
-	if(creds > creds1)
+	if (g_bBusy[Target])
 	{
-		PrintToChat(client, "%s You don't have enough credits.", CHAT_PREFIX);
+		PrintToChat(client, "%s %N is already in an on-going game.", CHAT_PREFIX, Target);
 		return Plugin_Handled;
 	}
 	
-	if(creds > creds2)
+	if (Credits < g_MinCredits || Credits > g_MaxCredits)
 	{
-		PrintToChat(client, "%s Opponent doesn't have enough credits.", CHAT_PREFIX);
+		PrintToChat(client, "%s Use an amount between %i and %i to play.", CHAT_PREFIX, g_MinCredits, g_MaxCredits);
 		return Plugin_Handled;
 	}
 	
-	Store_SetClientCredits(client, Store_GetClientCredits(client) - creds);
-	Store_SetClientCredits(target_final, Store_GetClientCredits(target_final) - creds);
-	g_Creds[target_final] = creds;
-	g_Creds[client] = creds;
-	g_Enemy[client] = target_final;
-	g_Enemy[target_final] = client;
-	AcceptReject(client, target_final);
+	if(Credits > Store_GetClientCredits(client))
+	{
+		PrintToChat(client, "%s You don't have enough credits. You need %i credits more to gamble %i credits.", CHAT_PREFIX, (Credits - Store_GetClientCredits(client)), Credits);
+		return Plugin_Handled;
+	}
 	
-	PrintToChat(client, "<-------------Coin-Toss by Simon------------->");
-	PrintToChat(target_final, "<-------------Coin-Toss by Simon------------->");
+	if(Credits > Store_GetClientCredits(Target))
+	{
+		PrintToChat(client, "%s %N doesn't have enough credits.", CHAT_PREFIX, Target);
+		return Plugin_Handled;
+	}
 
+	AskTarget(client, Target, Credits);
+	
 	return Plugin_Handled;
 }
 
-public void AcceptReject(int client, int other)
+public void AskTarget(int client, int opponent, int credits)
 {
-	Handle menu = CreateMenu(MyMenuHandler);
+	Menu menu = new Menu(AskTargetHandler, MENU_ACTIONS_DEFAULT);
+	char MenuTitle[50];
+	FormatEx(MenuTitle, sizeof(MenuTitle), "Coin-Toss: (%N) [%i Credits]", client, credits);
+	menu.SetTitle(MenuTitle);
+	menu.AddItem(ACCEPT, "Accept");
+	menu.AddItem(REJECT, "Reject");
 	
-	// FormatEx Here
-	char s_version[30];
-	FormatEx(s_version, sizeof(s_version), "Coin-Toss: (%N) [%i Credits]", client, g_Creds[client]);
-	SetMenuTitle(menu, s_version);
-	AddMenuItem(menu, "accept", "Accept");
-	AddMenuItem(menu, "reject", "Reject");
-	SetMenuExitButton(menu, false);
-	PleaseDo = true;
-	CreateTimer(20.0, RejectIt, other);
-	DisplayMenu(menu, other, MENU_TIME_FOREVER);
+	PushMenuCell(menu, "Challenger", client);
+	PushMenuCell(menu, "Credits", credits);
+	
+	menu.ExitButton = false;
+	menu.Display(opponent, 10);
 }
 
-public Action RejectIt(Handle timer, int other)
+public int AskTargetHandler(Menu menu, MenuAction action, int param1, int param2)
 {
-	if (PleaseDo)
+	switch(action)
 	{
-		g_Doit[other] = false;
-		checkreject(other);
-		PleaseDo = false;
-		CloseClientMenu(other);
+		case MenuAction_Select:
+		{
+			char info[32];
+			menu.GetItem(param2, info, sizeof(info));
+			if (StrEqual(info, ACCEPT))
+			{
+				PrintToChat(GetMenuCell(menu, "Challenger"), "%s %N accepted your challenge for %i credits.", CHAT_PREFIX, param1, GetMenuCell(menu, "Credits"));
+				StartCoinToss(GetMenuCell(menu, "Challenger"), param1, GetMenuCell(menu, "Credits"));
+			}
+			else
+			{
+				PrintToChat(GetMenuCell(menu, "Challenger"), "%s %N rejected your challenge for %i credits.", CHAT_PREFIX, param1, GetMenuCell(menu, "Credits"));
+			}
+		}
+		
+		case MenuAction_Cancel:
+		{
+			PrintToChat(GetMenuCell(menu, "Challenger"), "%s Challenge to %N was cancelled.  Reason: %d", CHAT_PREFIX, param1, param2);
+		}
 	}
 	
-}
-
-public int MyMenuHandler(Handle menu, MenuAction action, int client, int itemNum)
-{
-	if (action == MenuAction_Select)
-	{
-		decl String:info[11];
-		GetMenuItem(menu, itemNum, info, sizeof(info));
-		
-		if (strcmp(info,"accept") == 0) 
-		{
-			g_Doit[client] = true;
-			g_Wait = true;
-			PleaseDo = false;
-		}
-		
-		else if (strcmp(info,"reject") == 0) 
-		{
-			g_Doit[client] = false;
-			PleaseDo = false;
-		}
-	}
-	checkreject(client);
 	return 0;
 }
 
-public void checkreject(client)
+public void StartCoinToss(int client, int target, int credits)
 {
-	if(g_Doit[client])
-		StartCoinToss(client, g_Enemy[client], g_Creds[client]);
-	else
+	g_bBusy[client] = true;
+	g_bBusy[target] = true;
+	PrintToChatAll("%s %N (Heads) vs %N (Tails) for %i credits.", CHAT_PREFIX, client, target, credits);
+	
+	Store_SetClientCredits(client, Store_GetClientCredits(client) - credits);
+	Store_SetClientCredits(target, Store_GetClientCredits(target) - credits);
+	
+	int prize = credits * 2;
+	char HorT[2];
+	
+	if (GetRandomInt(1, 2) == 1) strcopy(HorT, sizeof(HorT), "H");
+	else strcopy(HorT, sizeof(HorT), "T");
+	
+	if(StrEqual(HorT, "H", false))
 	{
-		PrintToChat(client, "%s %N rejected your challenge.", CHAT_PREFIX, client);
-		Store_SetClientCredits(client, Store_GetClientCredits(client) + g_Creds[client]);
-		Store_SetClientCredits(g_Enemy[client], Store_GetClientCredits(g_Enemy[client]) + g_Creds[g_Enemy[client]]);
+		Marquee_StartOne(client, "Coin-Toss Result: H", false);
+		Marquee_StartOne(target, "Coin-Toss Result: H", false);
 	}
-		
-	g_Creds[client] = 0;
-	g_Creds[g_Enemy[client]] = 0;
-	g_Enemy[g_Enemy[client]] = 0;
-	g_Enemy[client] = 0;
+	else if(StrEqual(HorT, "T", false))
+	{
+		Marquee_StartOne(client, "Coin-Toss Result: T", false);
+		Marquee_StartOne(target, "Coin-Toss Result: T", false);
+	}
+	
+	DataPack data = new DataPack();
+	data.WriteCell(client);
+	data.WriteCell(target);
+	data.WriteCell(prize);
+	data.WriteString(HorT);
+	CreateTimer(0.2, CheckMarquee, data, TIMER_REPEAT);
 }
 
-public void StartCoinToss(int you, int enemy, int prize)
+public Action CheckMarquee(Handle timer, DataPack data)
 {
-	g_bUsed[you] = true;
-	g_bUsed[enemy] = true;
-	g_Doit[enemy] = false;
-	PrintToChatAll("%s %N vs %N for %i credits.", CHAT_PREFIX, you, enemy, prize);
-	//Store_SetClientCredits(you, Store_GetClientCredits(you) - prize);
-	//Store_SetClientCredits(enemy, Store_GetClientCredits(enemy) - prize);
-	
-	int Total = (prize * 2);
-	
-	int random_number = GetRandomInt(1, 2);
-	
-	if(random_number == 1)
+	data.Reset();
+	int client = data.ReadCell();
+	int target = data.ReadCell();
+	int prize = data.ReadCell();
+	char HorT[2];
+	data.ReadString(HorT, sizeof(HorT));
+	if(!Marquee_IsRunning(client) && !Marquee_IsRunning(target))
 	{
-		PrintToChatAll("%s %N won %i credits! %N lost!", CHAT_PREFIX, you, Total, enemy);
-		Store_SetClientCredits(you, Store_GetClientCredits(you) + Total);
-	}
-	
-	else
-	{
-		PrintToChatAll("%s %N won %i credits! %N lost!", CHAT_PREFIX, enemy, Total, you);
-		Store_SetClientCredits(enemy, Store_GetClientCredits(enemy) + Total);
-	}
-	g_Wait = false;
-}
-
-public Action Event_OnRoundEnd(Handle event, const char[] name, bool dontBroadcast)
-{
-	LoopClients(i)
-	{
-		g_bUsed[i] = false;
+		if(StrEqual(HorT, "H"))
+		{
+			PrintToChatAll("%s It\'s Heads. %N won %i credits. %N lost.", CHAT_PREFIX, client, prize, target);
+			Store_SetClientCredits(client, Store_GetClientCredits(client) + prize);
+		}
+		else if(StrEqual(HorT, "T", false))
+		{
+			PrintToChatAll("%s It\'s Tails. %N won %i credits. %N lost.", CHAT_PREFIX, target, prize, client);
+			Store_SetClientCredits(target, Store_GetClientCredits(target) + prize);
+		}
+		g_bBusy[client] = false;
+		g_bBusy[target] = false;
+		CloseHandle(data);
+		return Plugin_Stop;
 	}
 	return Plugin_Continue;
-}
-
-public void CloseClientMenu(client)
-{
-	Handle m_hMenu = CreateMenu(MenuHandler_CloseClientMenu);
-	SetMenuTitle(m_hMenu, "Empty menu");
-	DisplayMenu(m_hMenu, client, 1);
-}
-
-public int MenuHandler_CloseClientMenu(Handle menu, MenuAction action, int client, int param2)
-{
-	if (action == MenuAction_End)
-		CloseHandle(menu);
 }
