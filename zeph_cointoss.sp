@@ -3,7 +3,7 @@
 #define DEBUG
 
 #define PLUGIN_AUTHOR "Simon"
-#define PLUGIN_VERSION "2.1"
+#define PLUGIN_VERSION "2.2"
 #define ACCEPT "#accept"
 #define REJECT "#reject"
 
@@ -103,6 +103,12 @@ public Action Cmd_Toss(int client, int args)
 	if (Target == -1)
 	{
 		PrintToChat(client, "%s %s was not found.", CHAT_PREFIX, sTarget);
+		return Plugin_Handled;
+	}
+	
+	if (client == Target)
+	{
+		PrintToChat(client, "%s You can\'t challenge youresf.", CHAT_PREFIX);
 		return Plugin_Handled;
 	}
 	
